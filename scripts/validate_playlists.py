@@ -54,8 +54,15 @@ def main():
     import requests
 
     api_url = os.environ["APP_API_URL"].rstrip("/")
+    if api_url.endswith("/api"):
+        api_url = api_url[:-4]
     headers = {"Authorization": f"Bearer {os.environ['SYNC_TOKEN']}"}
-    response = requests.get(f"{api_url}/api/sync/sources", headers=headers, timeout=20)
+    try:
+        response = requests.get(f"{api_url}/api/sync/sources", headers=headers, timeout=20)
+    except requests.RequestException as error:
+        raise SystemExit(f"Could not reach Worker API. Check APP_API_URL and deployment: {error}") from error
+    if response.status_code == 404:
+        raise SystemExit("Worker API returned 404 at /api/sync/sources. Set APP_API_URL to the Worker base URL and deploy the current Worker version.")
     response.raise_for_status()
     results = []
     for source in response.json()["sources"]:

@@ -9,13 +9,11 @@ database_id = "8d15503f-0328-42f5-9673-d946aec7f012"
 migrations_dir = "migrations"
 
 [vars]
+APP_API_URL = "https://iptv-manager.gastura.workers.dev/"
 ENVIRONMENT = "production"
 GITHUB_BRANCH = "main"
 GITHUB_REPOSITORY = "dono/repositorio"
-GITHUB_TOKEN = ""
 GITHUB_WORKFLOW = "validate.yml"
-SESSION_SECRET = "vaCsMwF9o9a2HKPGkfwKL1Xf76OEoyEGhgK5AZGsbDKgBwjSmAAeQTyCPortPBr5"
-SYNC_TOKEN = "1xcdc4iCg7aWoQFwucqYKc5I2roq4P2S9dr5AP3fWgigMf5laQ8GGQ1A1LS51ulw"
 
 [assets]
 directory = "./dist"

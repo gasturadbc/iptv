@@ -19,7 +19,7 @@ Painel React/Vite entregue por Cloudflare Workers Static Assets. Um Worker atend
 5. Instale dependências do validador: `python -m pip install -r requirements.txt`.
 6. Rode os testes: `npm test` e `python -m unittest discover -s tests -v`.
 
-Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versione `.dev.vars` ou tokens.
+Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versione `.dev.vars` ou tokens. Cadastre-os como secrets no Worker, não em `[vars]` do `wrangler.toml`.
 
 ## Publicar gratuitamente
 
@@ -28,8 +28,8 @@ Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versi
 3. Faça login no Wrangler com `npx wrangler login`. Confira as migrações pendentes com `npx wrangler d1 migrations list iptv --remote`; se `0001_init.sql` estiver pendente, aplique com `npx wrangler d1 migrations apply iptv --remote`.
 4. No Cloudflare, conecte o repositório existente ao Worker `iptv-manager` em Workers & Pages > selecione o Worker > Settings > Builds. O nome do Worker precisa corresponder a `name` em `wrangler.toml`.
 5. Em Settings > Builds, use Root directory `/`, Build command `npm run build` e Deploy command `npx wrangler deploy`. O token de build padrão do Cloudflare autoriza o deploy; mantenha-o habilitado.
-6. Em Worker > Settings > Variables and Secrets, adicione `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN` e `GITHUB_TOKEN` como secrets. Adicione `GITHUB_REPOSITORY` como variável no formato `dono/repositorio`. `GITHUB_WORKFLOW` e `GITHUB_BRANCH` já estão no `wrangler.toml`.
-7. No GitHub, abra Settings > Secrets and variables > Actions. Crie `APP_API_URL` com a URL HTTPS `workers.dev` do Worker e `SYNC_TOKEN` com o mesmo valor salvo no Worker. O token salvo em `GITHUB_TOKEN` precisa de Actions: write no repositório.
+6. Em Worker > Settings > Variables and Secrets, adicione `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN` e `GITHUB_TOKEN` como secrets. Configure `GITHUB_REPOSITORY` como variável no formato `dono/repositorio`. `GITHUB_WORKFLOW` e `GITHUB_BRANCH` já estão no `wrangler.toml`.
+7. No GitHub, abra Settings > Secrets and variables > Actions. Crie `APP_API_URL` com a URL base HTTPS do Worker (por exemplo, `https://iptv-manager.SEUTIME.workers.dev`, sem `/api`) e `SYNC_TOKEN` com o mesmo valor salvo como secret no Worker. O token `GITHUB_TOKEN` do Worker precisa de permissão Actions: write no repositório.
 8. Em Workers Builds, execute Retry build ou envie novo commit para a branch conectada. Depois que o Worker publicar, abra a URL HTTPS, entre e cadastre fontes autorizadas. Playlist permanente: `https://SEU-WORKER.workers.dev/playlist.m3u`.
 
 O binding D1 `DB`, o Worker entry point e Static Assets vêm de `wrangler.toml`. O comando de deploy é `npx wrangler deploy`; não use `wrangler pages deploy`.
