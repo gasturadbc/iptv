@@ -30,8 +30,9 @@ export async function handle(request, env) {
   }
   if (path === "/api/auth/logout" && method === "POST") return json({ authenticated: false }, 200, { "Set-Cookie": "iptv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0" });
   if (["/api/playlist.m3u", "/playlist.m3u"].includes(path)) {
-    const { results } = await env.DB.prepare("SELECT name,url,logo,category FROM channels WHERE status='online' ORDER BY category,name").all();
-    const body = ["#EXTM3U", ...results.flatMap((c) => [`#EXTINF:-1 tvg-logo="${String(c.logo || "").replaceAll('"', "&quot;")}" group-title="${String(c.category || "Geral").replaceAll('"', "&quot;")}",${c.name.replace(/[\r\n]/g, " ")}`, c.url])].join("\n");
+    const { results } = await env.DB.prepare("SELECT channels.name,channels.url,channels.logo,channels.category,channels.tvg_id,sources.epg_url FROM channels JOIN sources ON sources.id=channels.source_id WHERE channels.status='online' ORDER BY channels.category,channels.name").all();
+    const epg = results.find((c) => c.epg_url)?.epg_url;
+    const body = [epg ? `#EXTM3U url-tvg="${epg.replaceAll('"', "&quot;")}"` : "#EXTM3U", ...results.flatMap((c) => [`#EXTINF:-1 tvg-id="${String(c.tvg_id || "").replaceAll('"', "&quot;")}" tvg-logo="${String(c.logo || "").replaceAll('"', "&quot;")}" group-title="${String(c.category || "Geral").replaceAll('"', "&quot;")}",${c.name.replace(/[\r\n]/g, " ")}`, c.url])].join("\n");
     return new Response(body, { headers: { "Content-Type": "audio/x-mpegurl; charset=utf-8", "Cache-Control": "public, max-age=300" } });
   }
   if (path === "/api/sync/sources" && method === "GET") {
@@ -57,7 +58,7 @@ export async function handle(request, env) {
         for (const c of item.channels) {
           if (!c.name || !validUrl(c.url) || seen.has(c.url)) continue;
           seen.add(c.url);
-          statements.push(env.DB.prepare("INSERT OR IGNORE INTO channels(source_id,name,url,logo,category,status,last_checked_at) VALUES(?,?,?,?,?,?,datetime('now'))").bind(item.id, String(c.name).slice(0, 255), c.url, c.logo || null, String(c.category || "Geral").slice(0, 120), c.online ? "online" : "offline"));
+          statements.push(env.DB.prepare("INSERT OR IGNORE INTO channels(source_id,name,url,logo,category,tvg_id,status,last_checked_at) VALUES(?,?,?,?,?,?,?,datetime('now'))").bind(item.id, String(c.name).slice(0, 255), c.url, c.logo || null, String(c.category || "Geral").slice(0, 120), c.tvg_id || null, c.online ? "online" : "offline"));
         }
         statements.push(env.DB.prepare("UPDATE sources SET last_success_at=datetime('now') WHERE id=?").bind(item.id));
       } else if (failures >= 2) statements.push(env.DB.prepare("DELETE FROM channels WHERE source_id=?").bind(item.id));
