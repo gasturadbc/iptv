@@ -35,11 +35,13 @@ export async function handle(request, env) {
     const epg = results.find((c) => c.epg_url)?.epg_url || config.epgUrl;
     const unique = new Set();
     const channels = results.filter((c) => !unique.has(c.url) && unique.add(c.url));
-    const body = [epg ? `#EXTM3U url-tvg="${epg.replaceAll('"', "&quot;")}"` : "#EXTM3U", ...channels.flatMap((c) => [`#EXTINF:-1 tvg-id="${String(c.tvg_id || "").replaceAll('"', "&quot;")}" tvg-logo="${String(c.logo || "").replaceAll('"', "&quot;")}" group-title="${String(c.category || "Geral").replaceAll('"', "&quot;")}",${c.name.replace(/[\r\n]/g, " ")}`, c.url])].join("\n");
+    const playlistHeader = [epg && `url-tvg="${epg.replaceAll('"', "&quot;")}"`, `x-tvg-name="${config.playlistName.replaceAll('"', "&quot;")}"`].filter(Boolean).join(" ");
+    const body = [`#EXTM3U ${playlistHeader}`, ...channels.flatMap((c) => [`#EXTINF:-1 tvg-id="${String(c.tvg_id || "").replaceAll('"', "&quot;")}" tvg-logo="${String(c.logo || "").replaceAll('"', "&quot;")}" group-title="${String(c.category || "Geral").replaceAll('"', "&quot;")}",${c.name.replace(/[\r\n]/g, " ")}`, c.url])].join("\n");
     return new Response(body, { headers: { "Content-Type": "audio/x-mpegurl; charset=utf-8", "Cache-Control": "public, max-age=300" } });
   }
   if (path === "/api/sync/sources" && method === "GET") {
     if (!sync(request, env)) return json({ error: "Não autorizado." }, 401);
+    await env.DB.prepare("DELETE FROM channel_staging WHERE created_at < datetime('now','-1 day')").run();
     const { results } = await env.DB.prepare("SELECT id,name,url,epg_url,consecutive_failures FROM sources WHERE enabled=1 AND consecutive_failures<2").all();
     return json({ sources: results });
   }
@@ -85,7 +87,7 @@ export async function handle(request, env) {
       }
     }
     const failedCount = checkedCount - onlineCount + (data.sources.length - successful);
-    const runStatus = successful === data.sources.length ? "online" : successful === 0 ? "offline" : "pending";
+    const runStatus = successful === data.sources.length && data.sources.length ? "success" : successful === 0 && data.sources.length ? "failure" : "partial";
     await env.DB.batch([env.DB.prepare("INSERT INTO runs(source_count,successful_count,channel_count,online_count,failed_count,status,completed_at) VALUES(?,?,?,?,?,?,datetime('now'))").bind(data.sources.length, successful, checkedCount, onlineCount, failedCount, runStatus), env.DB.prepare("INSERT INTO availability_snapshots(online,total) SELECT COUNT(DISTINCT CASE WHEN status='online' THEN url END),COUNT(DISTINCT url) FROM channels")]);
     return json({ updated: data.sources.length });
   }
@@ -93,14 +95,14 @@ export async function handle(request, env) {
   if (!await admin(request, env)) return json({ error: "Não autenticado." }, 401);
   if (path === "/api/dashboard" && method === "GET") {
     const counts = await env.DB.prepare("SELECT COUNT(DISTINCT url) total,COUNT(DISTINCT CASE WHEN status='online' THEN url END) online,COUNT(DISTINCT CASE WHEN status='offline' AND NOT EXISTS(SELECT 1 FROM channels c2 WHERE c2.url=channels.url AND c2.status='online') THEN url END) offline FROM channels").first();
-    const pending = await env.DB.prepare("SELECT COUNT(*) total FROM sources WHERE enabled=1").first();
+    const pending = await env.DB.prepare("SELECT COUNT(*) total FROM sources WHERE enabled=1 AND last_success_at IS NULL").first();
     const last = await env.DB.prepare("SELECT completed_at FROM runs ORDER BY id DESC LIMIT 1").first();
     const { results: categories } = await env.DB.prepare("SELECT category name,COUNT(DISTINCT url) count FROM channels GROUP BY category ORDER BY count DESC").all();
     const { results: snapshots } = await env.DB.prepare("SELECT online,total,captured_at FROM availability_snapshots ORDER BY id DESC LIMIT 14").all();
     const { results: checks } = await env.DB.prepare("SELECT checks.id,sources.name,sources.name source_name,checks.status,checks.checked_at checkedAt FROM checks JOIN sources ON sources.id=checks.source_id ORDER BY checks.id DESC LIMIT 8").all();
     const availabilityHistory = snapshots.reverse().map((row) => ({ label: row.captured_at.slice(5, 16), availability: row.total ? Math.round(row.online * 100 / row.total) : 0 }));
     const stats = { total: counts.total, totalChannels: counts.total, online: counts.online, offline: counts.offline, pending: pending.total, categories: categories.length, availability: counts.total ? Math.round(counts.online * 100 / counts.total) : 0 };
-    return json({ ...stats, stats, lastUpdate: last?.completed_at || null, categories, availabilityHistory, recentChecks: checks.map((row) => ({ ...row, status: row.status === "success" ? "online" : "offline" })) });
+    return json({ ...stats, stats, lastUpdate: last?.completed_at || null, lastUpdated: last?.completed_at || null, categories, availabilityHistory, recentChecks: checks.map((row) => ({ ...row, status: row.status === "success" ? "online" : "offline" })) });
   }
   if (path === "/api/sources" && method === "GET") {
     const { results } = await env.DB.prepare("SELECT s.*,COUNT(c.id) channel_count FROM sources s LEFT JOIN channels c ON c.source_id=s.id GROUP BY s.id ORDER BY s.created_at DESC").all();
@@ -121,11 +123,14 @@ export async function handle(request, env) {
     await env.DB.prepare("UPDATE sources SET name=?,url=?,epg_url=?,enabled=?,consecutive_failures=0 WHERE id=?").bind(String(b.name).slice(0, 120), b.url, epg || null, b.enabled === false ? 0 : 1, match[1]).run();
     return json({ updated: true });
   }
-  if (match && method === "DELETE") { await env.DB.prepare("DELETE FROM sources WHERE id=?").bind(match[1]).run(); return json({ deleted: true }); }
+  if (match && method === "DELETE") {
+    await env.DB.batch([env.DB.prepare("INSERT INTO removed_channels(source_name,channel_name,channel_url) SELECT sources.name,channels.name,channels.url FROM channels JOIN sources ON sources.id=channels.source_id WHERE sources.id=?").bind(match[1]), env.DB.prepare("DELETE FROM sources WHERE id=?").bind(match[1])]);
+    return json({ deleted: true });
+  }
   if (path === "/api/channels" && method === "GET") {
     const q = `%${(url.searchParams.get("q") || "").slice(0, 100)}%`, status = url.searchParams.get("status") || "", category = url.searchParams.get("category") || "";
     const source = url.searchParams.get("source") || "";
-    const { results } = await env.DB.prepare("SELECT c.*,s.name source_name FROM channels c JOIN sources s ON s.id=c.source_id WHERE c.name LIKE ? AND (?='' OR c.status=?) AND (?='' OR c.category=?) AND (?='' OR c.source_id=?) ORDER BY c.category,c.name LIMIT 500").bind(q, status, status, category, category, source, source).all();
+    const { results } = await env.DB.prepare("SELECT c.*,s.name source_name FROM channels c JOIN sources s ON s.id=c.source_id WHERE c.name LIKE ? AND (?='' OR c.status=?) AND (?='' OR c.category=?) AND (?='' OR c.source_id=?) AND (?<>'' OR c.id=(SELECT c2.id FROM channels c2 WHERE c2.url=c.url ORDER BY (c2.status='online') DESC,c2.id LIMIT 1)) ORDER BY c.category,c.name LIMIT 500").bind(q, status, status, category, category, source, source, source).all();
     const { results: categories } = await env.DB.prepare("SELECT DISTINCT category name FROM channels ORDER BY category").all();
     const { results: sources } = await env.DB.prepare("SELECT id,name FROM sources ORDER BY name").all();
     return json({ channels: results.map((c) => ({ ...c, sourceName: c.source_name, checkedAt: c.last_checked_at })), categories: categories.map((c) => c.name), filters: { sources }, total: results.length, pagination: { total: results.length } });

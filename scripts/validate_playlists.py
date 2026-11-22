@@ -1,10 +1,24 @@
 import concurrent.futures
+import ipaddress
 import os
 import re
+import socket
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 TIMEOUT = 12
+
+
+def public_http_url(value):
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+            return False
+        addresses = {ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
+        return bool(addresses) and all(address.is_global for address in addresses)
+    except (OSError, ValueError):
+        return False
 
 
 def attr(line, key):
@@ -25,8 +39,11 @@ def parse_playlist(text):
 
 
 def probe(channel):
+    if not public_http_url(channel["url"]):
+        channel["online"] = False
+        return channel
     try:
-        result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "default=noprint_wrappers=1", channel["url"]], capture_output=True, text=True, timeout=TIMEOUT, check=False)
+        result = subprocess.run(["ffprobe", "-v", "error", "-protocol_whitelist", "http,https,tcp,tls,crypto", "-show_entries", "stream=codec_type", "-of", "default=noprint_wrappers=1", channel["url"]], capture_output=True, text=True, timeout=TIMEOUT, check=False)
         channel["online"] = result.returncode == 0 and bool(result.stdout.strip())
     except (subprocess.TimeoutExpired, OSError):
         channel["online"] = False
@@ -43,7 +60,9 @@ def main():
     results = []
     for source in response.json()["sources"]:
         try:
-            response = requests.get(source["url"], timeout=TIMEOUT, stream=True)
+            if not public_http_url(source["url"]):
+                raise ValueError("URL da fonte precisa apontar para um host HTTP(S) público")
+            response = requests.get(source["url"], timeout=TIMEOUT, stream=True, allow_redirects=False)
             response.raise_for_status()
             content = response.raw.read(10 * 1024 * 1024 + 1)
             if len(content) > 10 * 1024 * 1024:

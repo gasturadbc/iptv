@@ -15,9 +15,9 @@ Painel React/Vite e Cloudflare Pages Functions para playlists M3U/M3U8 públicas
 1. Instale dependências: `npm install`.
 2. Crie banco local: `npx wrangler d1 migrations apply iptv-manager --local`.
 3. Crie `.dev.vars` com `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main`.
-4. Rode `npm run dev` para iniciar Vite e Pages Functions.
+4. Rode `npm run build` e depois `npx wrangler pages dev dist` para testar frontend e Pages Functions juntos. `npm run dev` inicia apenas o frontend Vite.
 5. Instale dependências do validador: `python -m pip install -r requirements.txt`.
-6. Rode os testes Python: `python -m unittest discover -s tests -v`.
+6. Rode os testes: `npm test` e `python -m unittest discover -s tests -v`.
 
 Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versione `.dev.vars` ou tokens.
 

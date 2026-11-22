@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).parents[1] / "scripts" / "validate_playlists.py"
@@ -22,6 +23,15 @@ class PlaylistParserTests(unittest.TestCase):
     def test_ignores_comments_and_duplicate_detection_can_use_url(self):
         channels = validator.parse_playlist('#EXTM3U\n#EXTVLCOPT:network-caching=1000\n#EXTINF:-1,Um\nhttps://stream.test/live\n')
         self.assertEqual([channel["url"] for channel in channels], ["https://stream.test/live"])
+
+    def test_rejects_local_and_non_http_targets(self):
+        self.assertFalse(validator.public_http_url("file:///etc/passwd"))
+        self.assertFalse(validator.public_http_url("http://localhost/live"))
+
+    def test_accepts_public_http_target(self):
+        public_record = (None, None, None, None, ("8.8.8.8", 443))
+        with patch.object(validator.socket, "getaddrinfo", return_value=[public_record]):
+            self.assertTrue(validator.public_http_url("https://stream.test/live"))
 
 
 if __name__ == "__main__":
