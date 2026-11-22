@@ -4,8 +4,8 @@ pages_build_output_dir = "dist"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "iptv-manager"
-database_id = "SET_AFTER_CREATING_D1"
+database_name = "iptv"
+database_id = "8d15503f-0328-42f5-9673-d946aec7f012"
 migrations_dir = "migrations"
 
 [vars]

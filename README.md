@@ -27,11 +27,11 @@ Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versi
 2. Crie D1: `npx wrangler d1 create iptv-manager`.
 3. Copie o `database_id` retornado para `wrangler.toml`.
 4. Aplique o schema remoto: `npx wrangler d1 migrations apply iptv-manager --remote`.
-5. Crie um projeto Cloudflare Pages conectado ao repositório. Use `npm run build` e `dist` como diretório de saída.
+5. Crie um projeto Cloudflare Pages conectado ao repositório. Use `npm run build` e `dist` como diretório de saída. No Pages com Git integration, deixe o deploy automático da plataforma publicar o build.
 6. Cadastre `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main` como variáveis/segredos do Pages Functions. Marque senhas e tokens como secrets.
 7. Em GitHub Actions, crie secrets `APP_API_URL` com a URL HTTPS do Pages e `SYNC_TOKEN` com o mesmo token do Worker.
 8. Crie token GitHub com permissão Actions: write no repositório. Armazene somente em `GITHUB_TOKEN` no Cloudflare.
-9. Faça deploy pelo fluxo GitHub Actions/Cloudflare Pages. O workflow de validação também dispara a cada 6 horas e manualmente pelo painel.
+9. Para deploy manual via Wrangler, use `npm run deploy:pages`. Se o ambiente de build tiver um campo de comando de deploy, configure `npm run deploy:pages`; não use `wrangler deploy`, que publica Workers e não Pages. O workflow de validação dispara a cada 6 horas e manualmente pelo painel.
 10. Abra `/`, entre com a senha administrativa e cadastre fontes autorizadas. `https://SEU-DOMINIO/playlist.m3u` é a playlist HTTPS permanente.
 
 Em Cloudflare, associe o D1 ao binding `DB` conforme `wrangler.toml`. Pages Functions precisa receber as mesmas variáveis em Production e Preview. Use credenciais diferentes para Preview.
