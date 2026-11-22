@@ -37,6 +37,7 @@ O binding D1 `DB`, o Worker entry point e Static Assets vêm de `wrangler.toml`.
 ## Operação
 
 - Ações de fontes, histórico e canais exigem sessão HttpOnly assinada, expira em 8 horas e usa `SameSite=Strict`.
+- O workflow agenda verificacoes automaticas a cada 12 horas (`17 */12 * * *`, UTC). Tambem aceita disparo manual pelo painel.
 - O workflow busca fontes via `SYNC_TOKEN`; arquivos privados passam pelo Worker e ficam no R2. O upload aceita M3U/M3U8 UTF-8 de até 10 MB. FFprobe roda no GitHub Actions com timeout de 12 s e no máximo 5 processos simultâneos.
 - Falhas gerais no workflow não alteram D1. Uma fonte só substitui canais após parsing bem-sucedido; duas falhas consecutivas desativam a fonte e removem seus canais.
 - Cada execução registra fontes processadas e verificações no D1.

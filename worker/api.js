@@ -201,7 +201,7 @@ export async function handle(request, env) {
 async function readSettings(env) {
   const { results } = await env.DB.prepare("SELECT key,value FROM settings").all();
   const values = Object.fromEntries(results.map(({ key, value }) => [key, value]));
-  return { playlistName: values.playlistName || "Minha playlist IPTV", epgUrl: values.epgUrl || "", intervalHours: 6, timeoutSeconds: 12, concurrency: 5 };
+  return { playlistName: values.playlistName || "Minha playlist IPTV", epgUrl: values.epgUrl || "", intervalHours: 12, timeoutSeconds: 12, concurrency: 5 };
 }
 
 function sourceView(source) {

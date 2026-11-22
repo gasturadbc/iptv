@@ -16,7 +16,7 @@ bucket_name = "iptv-playlists"
 APP_API_URL = "https://iptv-manager.gastura.workers.dev/"
 ENVIRONMENT = "production"
 GITHUB_BRANCH = "main"
-GITHUB_REPOSITORY = "dono/repositorio"
+GITHUB_REPOSITORY = "gasturadbc/iptv"
 GITHUB_WORKFLOW = "validate.yml"
 
 [assets]
