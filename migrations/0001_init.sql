@@ -1,0 +1,5 @@
+PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, epg_url TEXT, enabled INTEGER NOT NULL DEFAULT 1, consecutive_failures INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), last_checked_at TEXT, last_success_at TEXT);
+CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE, name TEXT NOT NULL, url TEXT NOT NULL, logo TEXT, category TEXT NOT NULL DEFAULT 'Geral', status TEXT NOT NULL CHECK(status IN ('online','offline')), last_checked_at TEXT, UNIQUE(source_id,url));
+CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, source_count INTEGER NOT NULL, successful_count INTEGER NOT NULL, completed_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS checks (id INTEGER PRIMARY KEY AUTOINCREMENT, source_id INTEGER NOT NULL REFERENCES sources(id) ON DELETE CASCADE, status TEXT NOT NULL CHECK(status IN ('success','failure')), channel_count INTEGER NOT NULL DEFAULT 0, error TEXT, checked_at TEXT NOT NULL DEFAULT (datetime('now')));
