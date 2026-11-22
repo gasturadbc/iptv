@@ -1,6 +1,6 @@
 # IPTV Manager
 
-Painel React/Vite e Cloudflare Pages Functions para playlists M3U/M3U8 públicas e autorizadas. Cloudflare D1 guarda fontes, canais e histórico. GitHub Actions roda Python/FFprobe; nenhum token administrativo vai ao navegador.
+Painel React/Vite entregue por Cloudflare Workers Static Assets. Um Worker atende API e playlist M3U; Cloudflare D1 guarda fontes, canais e histórico. GitHub Actions roda Python/FFprobe; nenhum token administrativo vai ao navegador.
 
 ## Requisitos
 
@@ -13,9 +13,9 @@ Painel React/Vite e Cloudflare Pages Functions para playlists M3U/M3U8 públicas
 ## Executar localmente
 
 1. Instale dependências: `npm install`.
-2. Crie banco local: `npx wrangler d1 migrations apply iptv-manager --local`.
+2. Crie banco local: `npx wrangler d1 migrations apply iptv --local`.
 3. Crie `.dev.vars` com `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main`.
-4. Rode `npm run build` e depois `npx wrangler pages dev dist` para testar frontend e Pages Functions juntos. `npm run dev` inicia apenas o frontend Vite.
+4. Rode `npm run dev:worker` para testar frontend, Worker e D1 local juntos. `npm run dev` inicia apenas o Vite.
 5. Instale dependências do validador: `python -m pip install -r requirements.txt`.
 6. Rode os testes: `npm test` e `python -m unittest discover -s tests -v`.
 
@@ -27,14 +27,14 @@ Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versi
 2. Crie D1: `npx wrangler d1 create iptv-manager`.
 3. Copie o `database_id` retornado para `wrangler.toml`.
 4. Aplique o schema remoto: `npx wrangler d1 migrations apply iptv-manager --remote`.
-5. Crie um projeto Cloudflare Pages conectado ao repositório. Use `npm run build` e `dist` como diretório de saída. No Pages com Git integration, deixe o deploy automático da plataforma publicar o build.
-6. Cadastre `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main` como variáveis/segredos do Pages Functions. Marque senhas e tokens como secrets.
-7. Em GitHub Actions, crie secrets `APP_API_URL` com a URL HTTPS do Pages e `SYNC_TOKEN` com o mesmo token do Worker.
-8. Crie token GitHub com permissão Actions: write no repositório. Armazene somente em `GITHUB_TOKEN` no Cloudflare.
-9. Para deploy manual via Wrangler, use `npm run deploy:pages`. Se o ambiente de build tiver um campo de comando de deploy, configure `npm run deploy:pages`; não use `wrangler deploy`, que publica Workers e não Pages. O workflow de validação dispara a cada 6 horas e manualmente pelo painel.
-10. Abra `/`, entre com a senha administrativa e cadastre fontes autorizadas. `https://SEU-DOMINIO/playlist.m3u` é a playlist HTTPS permanente.
+5. Conecte o repositório em Workers & Pages > Workers > Create application > Connect to Git.
+6. Configure Build command `npm run build` e Deploy command `npx wrangler deploy`. `wrangler.toml` aponta para Worker e `dist` como Static Assets.
+7. Crie D1: `npx wrangler d1 create iptv`. Copie o `database_id` retornado para `wrangler.toml` e aplique o schema: `npx wrangler d1 migrations apply iptv --remote`.
+8. Configure secrets do Worker: `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN` e `GITHUB_TOKEN`. Configure `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main` como variáveis. Use Cloudflare Worker Settings ou `npx wrangler secret put NOME` para cada secret.
+9. Em GitHub Actions, crie secrets `APP_API_URL` com a URL HTTPS `workers.dev` do Worker e `SYNC_TOKEN` com o mesmo token do Worker. O token GitHub precisa de Actions: write no repositório. O workflow roda a cada 6 horas e também pelo painel.
+10. Abra a URL HTTPS do Worker, entre e cadastre fontes autorizadas. Playlist permanente: `https://SEU-WORKER.workers.dev/playlist.m3u`.
 
-Em Cloudflare, associe o D1 ao binding `DB` conforme `wrangler.toml`. Pages Functions precisa receber as mesmas variáveis em Production e Preview. Use credenciais diferentes para Preview.
+O binding D1 `DB`, o Worker entry point e Static Assets vêm de `wrangler.toml`. O comando de deploy é `npx wrangler deploy`; não use `wrangler pages deploy`.
 
 ## Operação
 

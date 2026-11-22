@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handle } from "../functions/_lib/api.js";
+import { handle } from "../worker/api.js";
 
 const env = {
   ADMIN_PASSWORD: "test-password",
