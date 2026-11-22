@@ -67,9 +67,12 @@ def main():
     results = []
     for source in response.json()["sources"]:
         try:
-            if not public_http_url(source["url"]):
-                raise ValueError("URL da fonte precisa apontar para um host HTTP(S) público")
-            response = requests.get(source["url"], timeout=TIMEOUT, stream=True, allow_redirects=False)
+            if source.get("type") == "file":
+                response = requests.get(f"{api_url}/api/sync/sources/{source['id']}/playlist", headers=headers, timeout=20, stream=True)
+            else:
+                if not public_http_url(source["url"]):
+                    raise ValueError("URL da fonte precisa apontar para host HTTP(S) publico")
+                response = requests.get(source["url"], timeout=TIMEOUT, stream=True, allow_redirects=False)
             response.raise_for_status()
             content = response.raw.read(10 * 1024 * 1024 + 1)
             if len(content) > 10 * 1024 * 1024:

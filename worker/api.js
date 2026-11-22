@@ -42,8 +42,17 @@ export async function handle(request, env) {
   if (path === "/api/sync/sources" && method === "GET") {
     if (!sync(request, env)) return json({ error: "Não autorizado." }, 401);
     await env.DB.prepare("DELETE FROM channel_staging WHERE created_at < datetime('now','-1 day')").run();
-    const { results } = await env.DB.prepare("SELECT id,name,url,epg_url,consecutive_failures FROM sources WHERE enabled=1 AND consecutive_failures<2").all();
-    return json({ sources: results });
+    const { results } = await env.DB.prepare("SELECT id,name,url,epg_url,consecutive_failures,playlist_key FROM sources WHERE enabled=1 AND consecutive_failures<2").all();
+    return json({ sources: results.map(({ playlist_key, ...source }) => ({ ...source, type: playlist_key ? "file" : "url" })) });
+  }
+  const uploadedPlaylist = path.match(/^\/api\/sync\/sources\/(\d+)\/playlist$/);
+  if (uploadedPlaylist && method === "GET") {
+    if (!sync(request, env)) return json({ error: "Nao autorizado." }, 401);
+    const source = await env.DB.prepare("SELECT playlist_key FROM sources WHERE id=? AND enabled=1 AND consecutive_failures<2").bind(uploadedPlaylist[1]).first();
+    if (!source?.playlist_key) return json({ error: "Playlist enviada nao encontrada." }, 404);
+    const object = await env.PLAYLISTS.get(source.playlist_key);
+    if (!object) return json({ error: "Arquivo da playlist nao encontrado." }, 404);
+    return new Response(object.body, { headers: { "Content-Type": "audio/x-mpegurl; charset=utf-8", "Cache-Control": "no-store" } });
   }
   if (path === "/api/sync/results" && method === "POST") {
     if (!sync(request, env)) return json({ error: "Não autorizado." }, 401);
@@ -111,20 +120,47 @@ export async function handle(request, env) {
   if (path === "/api/sources" && method === "POST") {
     const b = await request.json().catch(() => ({}));
     const epg = b.epgUrl || b.epg_url;
-    if (!b.name || !validUrl(b.url) || (epg && !validUrl(epg))) return json({ error: "Informe nome e URL HTTP(S) válida." }, 400);
+    if (!b.name || !validUrl(b.url) || (epg && !validUrl(epg))) return json({ error: "Informe nome e URL HTTP(S) valida." }, 400);
     const result = await env.DB.prepare("INSERT INTO sources(name,url,epg_url) VALUES(?,?,?)").bind(String(b.name).slice(0, 120), b.url, epg || null).run();
     return json({ id: result.meta.last_row_id }, 201);
+  }
+  if (path === "/api/sources/upload" && method === "POST") {
+    if (!env.PLAYLISTS) return json({ error: "Armazenamento de arquivos nao configurado no Worker." }, 503);
+    const form = await request.formData().catch(() => null);
+    const file = form?.get("file");
+    const name = form?.get("name");
+    const epg = form?.get("epgUrl") || null;
+    if (typeof name !== "string" || !name.trim() || name.length > 120 || !(file instanceof File)) return json({ error: "Informe nome e arquivo M3U/M3U8 valido." }, 400);
+    if (!/\.(m3u8?)$/i.test(file.name)) return json({ error: "Use arquivo com extensao .m3u ou .m3u8." }, 400);
+    if (file.size > 10 * 1024 * 1024) return json({ error: "O arquivo excede o limite de 10 MB." }, 413);
+    if (epg && !validUrl(epg)) return json({ error: "URL EPG precisa usar HTTP(S)." }, 400);
+    let content;
+    try { content = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer()); }
+    catch { return json({ error: "O arquivo precisa usar codificacao UTF-8." }, 400); }
+    if (!content.trimStart().startsWith("#EXTM3U") || !/^https?:\/\/\S+$/m.test(content)) return json({ error: "Playlist invalida: precisa de cabecalho #EXTM3U e ao menos uma URL HTTP(S)." }, 400);
+    const key = `playlists/${crypto.randomUUID()}`;
+    await env.PLAYLISTS.put(key, content, { httpMetadata: { contentType: "audio/x-mpegurl; charset=utf-8" } });
+    try {
+      const result = await env.DB.prepare("INSERT INTO sources(name,url,epg_url,playlist_key) VALUES(?,?,?,?)").bind(name.trim().slice(0, 120), "", epg, key).run();
+      return json({ id: result.meta.last_row_id }, 201);
+    } catch (error) {
+      await env.PLAYLISTS.delete(key);
+      throw error;
+    }
   }
   const match = path.match(/^\/api\/sources\/(\d+)$/);
   if (match && method === "PUT") {
     const b = await request.json().catch(() => ({}));
     const epg = b.epgUrl || b.epg_url;
-    if (!b.name || !validUrl(b.url) || (epg && !validUrl(epg))) return json({ error: "Informe nome e URL HTTP(S) válida." }, 400);
-    await env.DB.prepare("UPDATE sources SET name=?,url=?,epg_url=?,enabled=?,consecutive_failures=0 WHERE id=?").bind(String(b.name).slice(0, 120), b.url, epg || null, b.enabled === false ? 0 : 1, match[1]).run();
+    const current = await env.DB.prepare("SELECT playlist_key FROM sources WHERE id=?").bind(match[1]).first();
+    if (!b.name || (!current?.playlist_key && !validUrl(b.url)) || (epg && !validUrl(epg))) return json({ error: "Informe nome e URL HTTP(S) válida." }, 400);
+    await env.DB.prepare("UPDATE sources SET name=?,url=?,epg_url=?,enabled=?,consecutive_failures=0 WHERE id=?").bind(String(b.name).slice(0, 120), current?.playlist_key ? "" : b.url, epg || null, b.enabled === false ? 0 : 1, match[1]).run();
     return json({ updated: true });
   }
   if (match && method === "DELETE") {
+    const source = await env.DB.prepare("SELECT playlist_key FROM sources WHERE id=?").bind(match[1]).first();
     await env.DB.batch([env.DB.prepare("INSERT INTO removed_channels(source_name,channel_name,channel_url) SELECT sources.name,channels.name,channels.url FROM channels JOIN sources ON sources.id=channels.source_id WHERE sources.id=?").bind(match[1]), env.DB.prepare("DELETE FROM sources WHERE id=?").bind(match[1])]);
+    if (source?.playlist_key) await env.PLAYLISTS?.delete(source.playlist_key);
     return json({ deleted: true });
   }
   if (path === "/api/channels" && method === "GET") {
@@ -169,5 +205,5 @@ async function readSettings(env) {
 }
 
 function sourceView(source) {
-  return { id: source.id, name: source.name, url: source.url, epgUrl: source.epg_url || "", enabled: Boolean(source.enabled), channelCount: source.channel_count, lastChecked: source.last_checked_at, lastSuccess: source.last_success_at, consecutiveFailures: source.consecutive_failures };
+  return { id: source.id, name: source.name, type: source.playlist_key ? "file" : "url", url: source.url, epgUrl: source.epg_url || "", enabled: Boolean(source.enabled), channelCount: source.channel_count, lastChecked: source.last_checked_at, lastSuccess: source.last_success_at, consecutiveFailures: source.consecutive_failures };
 }
