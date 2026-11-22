@@ -23,16 +23,14 @@ Gere `SESSION_SECRET` e `SYNC_TOKEN` com valores aleatórios longos. Nunca versi
 
 ## Publicar gratuitamente
 
-1. Crie um repositório GitHub e envie estes arquivos para a branch `main`.
-2. Crie D1: `npx wrangler d1 create iptv-manager`.
-3. Copie o `database_id` retornado para `wrangler.toml`.
-4. Aplique o schema remoto: `npx wrangler d1 migrations apply iptv-manager --remote`.
-5. Conecte o repositório em Workers & Pages > Workers > Create application > Connect to Git.
-6. Configure Build command `npm run build` e Deploy command `npx wrangler deploy`. `wrangler.toml` aponta para Worker e `dist` como Static Assets.
-7. Crie D1: `npx wrangler d1 create iptv`. Copie o `database_id` retornado para `wrangler.toml` e aplique o schema: `npx wrangler d1 migrations apply iptv --remote`.
-8. Configure secrets do Worker: `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN` e `GITHUB_TOKEN`. Configure `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW=validate.yml` e `GITHUB_BRANCH=main` como variáveis. Use Cloudflare Worker Settings ou `npx wrangler secret put NOME` para cada secret.
-9. Em GitHub Actions, crie secrets `APP_API_URL` com a URL HTTPS `workers.dev` do Worker e `SYNC_TOKEN` com o mesmo token do Worker. O token GitHub precisa de Actions: write no repositório. O workflow roda a cada 6 horas e também pelo painel.
-10. Abra a URL HTTPS do Worker, entre e cadastre fontes autorizadas. Playlist permanente: `https://SEU-WORKER.workers.dev/playlist.m3u`.
+1. Crie um repositório GitHub e envie os arquivos para a branch `main`.
+2. Confirme no painel Cloudflare que o D1 `iptv` corresponde ao `database_id` configurado em `wrangler.toml`.
+3. Faça login no Wrangler com `npx wrangler login`. Confira as migrações pendentes com `npx wrangler d1 migrations list iptv --remote`; se `0001_init.sql` estiver pendente, aplique com `npx wrangler d1 migrations apply iptv --remote`.
+4. No Cloudflare, conecte o repositório existente ao Worker `iptv-manager` em Workers & Pages > selecione o Worker > Settings > Builds. O nome do Worker precisa corresponder a `name` em `wrangler.toml`.
+5. Em Settings > Builds, use Root directory `/`, Build command `npm run build` e Deploy command `npx wrangler deploy`. O token de build padrão do Cloudflare autoriza o deploy; mantenha-o habilitado.
+6. Em Worker > Settings > Variables and Secrets, adicione `ADMIN_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN` e `GITHUB_TOKEN` como secrets. Adicione `GITHUB_REPOSITORY` como variável no formato `dono/repositorio`. `GITHUB_WORKFLOW` e `GITHUB_BRANCH` já estão no `wrangler.toml`.
+7. No GitHub, abra Settings > Secrets and variables > Actions. Crie `APP_API_URL` com a URL HTTPS `workers.dev` do Worker e `SYNC_TOKEN` com o mesmo valor salvo no Worker. O token salvo em `GITHUB_TOKEN` precisa de Actions: write no repositório.
+8. Em Workers Builds, execute Retry build ou envie novo commit para a branch conectada. Depois que o Worker publicar, abra a URL HTTPS, entre e cadastre fontes autorizadas. Playlist permanente: `https://SEU-WORKER.workers.dev/playlist.m3u`.
 
 O binding D1 `DB`, o Worker entry point e Static Assets vêm de `wrangler.toml`. O comando de deploy é `npx wrangler deploy`; não use `wrangler pages deploy`.
 

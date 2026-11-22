@@ -10,8 +10,12 @@ migrations_dir = "migrations"
 
 [vars]
 ENVIRONMENT = "production"
-GITHUB_WORKFLOW = "validate.yml"
 GITHUB_BRANCH = "main"
+GITHUB_REPOSITORY = "dono/repositorio"
+GITHUB_TOKEN = ""
+GITHUB_WORKFLOW = "validate.yml"
+SESSION_SECRET = "vaCsMwF9o9a2HKPGkfwKL1Xf76OEoyEGhgK5AZGsbDKgBwjSmAAeQTyCPortPBr5"
+SYNC_TOKEN = "1xcdc4iCg7aWoQFwucqYKc5I2roq4P2S9dr5AP3fWgigMf5laQ8GGQ1A1LS51ulw"
 
 [assets]
 directory = "./dist"
