@@ -114,9 +114,9 @@ test("channel list uses the deduplicated catalog and paginates in D1", async () 
   const response = await handle(new Request("https://app.test/api/channels?page=3" , { headers: { Cookie: login.headers.get("Set-Cookie").split(";")[0] } }), { ...env, DB });
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.deepEqual(body.pagination, { total: 235, page: 3, pageSize: 100, pages: 3 });
+  assert.deepEqual(body.pagination, { total: 235, page: 3, pageSize: 25, pages: 10 });
   assert.match(statements[0].sql, /FROM channel_catalog/);
   assert.match(statements[0].sql, /LIMIT \? OFFSET \?/);
-  assert.equal(statements[0].values.at(-1), 200);
+  assert.equal(statements[0].values.at(-1), 50);
   assert.match(statements[1].sql, /COUNT\(\*\) total FROM channel_catalog/);
 });

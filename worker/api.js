@@ -184,7 +184,7 @@ export async function handle(request, env) {
     const source = url.searchParams.get("source") || "";
     const requestedPage = Number.parseInt(url.searchParams.get("page") || "1", 10);
     const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-    const pageSize = 100;
+    const pageSize = 25;
     const table = source ? "channels c JOIN sources s ON s.id=c.source_id" : "channel_catalog c";
     const sourceName = source ? "s.name" : "c.source_name";
     const predicates = ["c.name LIKE ?"];
