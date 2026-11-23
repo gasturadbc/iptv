@@ -18,6 +18,20 @@ async function admin(request, env) {
 const sync = (request, env) => env.SYNC_TOKEN && request.headers.get("Authorization") === `Bearer ${env.SYNC_TOKEN}`;
 const validUrl = (value) => { try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; } };
 
+async function refreshChannelCatalog(env) {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM channel_catalog"),
+    env.DB.prepare(`WITH preferred AS (
+      SELECT url,COALESCE(MIN(CASE WHEN status='online' THEN id END),MIN(id)) id
+      FROM channels GROUP BY url
+    )
+    INSERT INTO channel_catalog(url,source_id,source_name,epg_url,name,logo,category,tvg_id,status,last_checked_at)
+    SELECT c.url,c.source_id,s.name,s.epg_url,c.name,c.logo,c.category,c.tvg_id,c.status,c.last_checked_at
+    FROM preferred p JOIN channels c ON c.id=p.id JOIN sources s ON s.id=c.source_id`),
+    env.DB.prepare("INSERT INTO availability_snapshots(online,total) SELECT COALESCE(SUM(status='online'),0),COUNT(*) FROM channel_catalog"),
+  ]);
+}
+
 export async function handle(request, env) {
   const url = new URL(request.url), path = url.pathname.replace(/\/$/, ""), method = request.method;
   if (["/api/auth/session", "/api/session"].includes(path) && method === "GET") return await admin(request, env) ? json({ authenticated: true }) : json({ error: "Não autenticado." }, 401);
@@ -30,7 +44,7 @@ export async function handle(request, env) {
   }
   if (["/api/auth/logout", "/api/logout"].includes(path) && method === "POST") return json({ authenticated: false }, 200, { "Set-Cookie": "iptv_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0" });
   if (["/api/playlist.m3u", "/playlist.m3u"].includes(path)) {
-    const { results } = await env.DB.prepare("SELECT channels.name,channels.url,channels.logo,channels.category,channels.tvg_id,sources.epg_url FROM channels JOIN sources ON sources.id=channels.source_id WHERE channels.status='online' ORDER BY channels.category,channels.name").all();
+    const { results } = await env.DB.prepare("SELECT name,url,logo,category,tvg_id,epg_url FROM channel_catalog WHERE status='online' ORDER BY category,name").all();
     const config = await readSettings(env);
     const epg = results.find((c) => c.epg_url)?.epg_url || config.epgUrl;
     const unique = new Set();
@@ -97,16 +111,17 @@ export async function handle(request, env) {
     }
     const failedCount = checkedCount - onlineCount + (data.sources.length - successful);
     const runStatus = successful === data.sources.length && data.sources.length ? "success" : successful === 0 && data.sources.length ? "failure" : "partial";
-    await env.DB.batch([env.DB.prepare("INSERT INTO runs(source_count,successful_count,channel_count,online_count,failed_count,status,completed_at) VALUES(?,?,?,?,?,?,datetime('now'))").bind(data.sources.length, successful, checkedCount, onlineCount, failedCount, runStatus), env.DB.prepare("INSERT INTO availability_snapshots(online,total) SELECT COUNT(DISTINCT CASE WHEN status='online' THEN url END),COUNT(DISTINCT url) FROM channels")]);
+    await env.DB.batch([env.DB.prepare("INSERT INTO runs(source_count,successful_count,channel_count,online_count,failed_count,status,completed_at) VALUES(?,?,?,?,?,?,datetime('now'))").bind(data.sources.length, successful, checkedCount, onlineCount, failedCount, runStatus)]);
+    await refreshChannelCatalog(env);
     return json({ updated: data.sources.length });
   }
 
   if (!await admin(request, env)) return json({ error: "Não autenticado." }, 401);
   if (path === "/api/dashboard" && method === "GET") {
-    const counts = await env.DB.prepare("SELECT COUNT(DISTINCT url) total,COUNT(DISTINCT CASE WHEN status='online' THEN url END) online,COUNT(DISTINCT CASE WHEN status='offline' AND NOT EXISTS(SELECT 1 FROM channels c2 WHERE c2.url=channels.url AND c2.status='online') THEN url END) offline FROM channels").first();
+    const counts = await env.DB.prepare("SELECT COUNT(*) total,COALESCE(SUM(status='online'),0) online,COALESCE(SUM(status='offline'),0) offline FROM channel_catalog").first();
     const pending = await env.DB.prepare("SELECT COUNT(*) total FROM sources WHERE enabled=1 AND last_success_at IS NULL").first();
     const last = await env.DB.prepare("SELECT completed_at FROM runs ORDER BY id DESC LIMIT 1").first();
-    const { results: categories } = await env.DB.prepare("SELECT category name,COUNT(DISTINCT url) count FROM channels GROUP BY category ORDER BY count DESC").all();
+    const { results: categories } = await env.DB.prepare("SELECT category name,COUNT(*) count FROM channel_catalog GROUP BY category ORDER BY count DESC").all();
     const { results: snapshots } = await env.DB.prepare("SELECT online,total,captured_at FROM availability_snapshots ORDER BY id DESC LIMIT 14").all();
     const { results: checks } = await env.DB.prepare("SELECT checks.id,sources.name,sources.name source_name,checks.status,checks.checked_at checkedAt FROM checks JOIN sources ON sources.id=checks.source_id ORDER BY checks.id DESC LIMIT 8").all();
     const availabilityHistory = snapshots.reverse().map((row) => ({ label: row.captured_at.slice(5, 16), availability: row.total ? Math.round(row.online * 100 / row.total) : 0 }));
@@ -160,16 +175,31 @@ export async function handle(request, env) {
   if (match && method === "DELETE") {
     const source = await env.DB.prepare("SELECT playlist_key FROM sources WHERE id=?").bind(match[1]).first();
     await env.DB.batch([env.DB.prepare("INSERT INTO removed_channels(source_name,channel_name,channel_url) SELECT sources.name,channels.name,channels.url FROM channels JOIN sources ON sources.id=channels.source_id WHERE sources.id=?").bind(match[1]), env.DB.prepare("DELETE FROM sources WHERE id=?").bind(match[1])]);
+    await refreshChannelCatalog(env);
     if (source?.playlist_key) await env.PLAYLISTS?.delete(source.playlist_key);
     return json({ deleted: true });
   }
   if (path === "/api/channels" && method === "GET") {
     const q = `%${(url.searchParams.get("q") || "").slice(0, 100)}%`, status = url.searchParams.get("status") || "", category = url.searchParams.get("category") || "";
     const source = url.searchParams.get("source") || "";
-    const { results } = await env.DB.prepare("SELECT c.*,s.name source_name FROM channels c JOIN sources s ON s.id=c.source_id WHERE c.name LIKE ? AND (?='' OR c.status=?) AND (?='' OR c.category=?) AND (?='' OR c.source_id=?) AND (?<>'' OR c.id=(SELECT c2.id FROM channels c2 WHERE c2.url=c.url ORDER BY (c2.status='online') DESC,c2.id LIMIT 1)) ORDER BY c.category,c.name LIMIT 500").bind(q, status, status, category, category, source, source, source).all();
-    const { results: categories } = await env.DB.prepare("SELECT DISTINCT category name FROM channels ORDER BY category").all();
+    const requestedPage = Number.parseInt(url.searchParams.get("page") || "1", 10);
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const pageSize = 100;
+    const table = source ? "channels c JOIN sources s ON s.id=c.source_id" : "channel_catalog c";
+    const sourceName = source ? "s.name" : "c.source_name";
+    const predicates = ["c.name LIKE ?"];
+    const bindings = [q];
+    if (status) { predicates.push("c.status=?"); bindings.push(status); }
+    if (category) { predicates.push("c.category=?"); bindings.push(category); }
+    if (source) { predicates.push("c.source_id=?"); bindings.push(source); }
+    const where = predicates.join(" AND ");
+    const [{ results }, total] = await Promise.all([
+      env.DB.prepare(`SELECT c.*,${sourceName} source_name FROM ${table} WHERE ${where} ORDER BY c.category,c.name LIMIT ? OFFSET ?`).bind(...bindings, pageSize, (page - 1) * pageSize).all(),
+      env.DB.prepare(`SELECT COUNT(*) total FROM ${table} WHERE ${where}`).bind(...bindings).first(),
+    ]);
+    const { results: categories } = await env.DB.prepare("SELECT DISTINCT category name FROM channel_catalog ORDER BY category").all();
     const { results: sources } = await env.DB.prepare("SELECT id,name FROM sources ORDER BY name").all();
-    return json({ channels: results.map((c) => ({ ...c, sourceName: c.source_name, checkedAt: c.last_checked_at })), categories: categories.map((c) => c.name), filters: { sources }, total: results.length, pagination: { total: results.length } });
+    return json({ channels: results.map((c) => ({ ...c, sourceName: c.source_name, checkedAt: c.last_checked_at })), categories: categories.map((c) => c.name), filters: { sources }, total: total.total, pagination: { total: total.total, page, pageSize, pages: Math.ceil(total.total / pageSize) } });
   }
   if (path === "/api/history" && method === "GET") {
     const { results: runs } = await env.DB.prepare("SELECT *,completed_at startedAt,completed_at createdAt,channel_count checkedCount,online_count onlineCount,failed_count failedCount FROM runs ORDER BY id DESC LIMIT 30").all();

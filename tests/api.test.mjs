@@ -90,7 +90,7 @@ test("public playlist route returns an M3U response", async () => {
 });
 
 test("public playlist removes duplicate stream URLs", async () => {
-  const db = { prepare: (sql) => ({ all: async () => ({ results: sql.startsWith("SELECT channels.name") ? [
+  const db = { prepare: (sql) => ({ all: async () => ({ results: sql.startsWith("SELECT name,url,logo") ? [
     { name: "Canal A", url: "https://stream.test/live", category: "Geral", tvg_id: "a", epg_url: "https://epg.test/guide.xml" },
     { name: "Canal duplicado", url: "https://stream.test/live", category: "Geral", epg_url: "https://epg.test/guide.xml" },
   ] : [] }) }) };
@@ -98,4 +98,25 @@ test("public playlist removes duplicate stream URLs", async () => {
   const text = await response.text();
   assert.match(text, /url-tvg="https:\/\/epg\.test\/guide\.xml"/);
   assert.equal((text.match(/https:\/\/stream\.test\/live/g) || []).length, 1);
+});
+
+test("channel list uses the deduplicated catalog and paginates in D1", async () => {
+  const login = await handle(new Request("https://app.test/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: env.ADMIN_PASSWORD }) }), env);
+  const statements = [];
+  const DB = { prepare: sql => {
+    const statement = {
+      bind: (...values) => { statement.values = values; return statement; },
+      all: async () => { statements.push({ sql, values: statement.values || [] }); return { results: [] }; },
+      first: async () => { statements.push({ sql, values: statement.values || [] }); return { total: 235 }; },
+    };
+    return statement;
+  } };
+  const response = await handle(new Request("https://app.test/api/channels?page=3" , { headers: { Cookie: login.headers.get("Set-Cookie").split(";")[0] } }), { ...env, DB });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.pagination, { total: 235, page: 3, pageSize: 100, pages: 3 });
+  assert.match(statements[0].sql, /FROM channel_catalog/);
+  assert.match(statements[0].sql, /LIMIT \? OFFSET \?/);
+  assert.equal(statements[0].values.at(-1), 200);
+  assert.match(statements[1].sql, /COUNT\(\*\) total FROM channel_catalog/);
 });
