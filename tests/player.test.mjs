@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectStreamUrl } from "../src/player-utils.js";
+import { inspectStreamUrl, secureStreamUrl } from "../src/player-utils.js";
+
+test("tries HTTPS on the original hostname and preserves port and query", () => {
+  assert.equal(secureStreamUrl("http://tv.example:8080/live.m3u8?key=value"), "https://tv.example:8080/live.m3u8?key=value");
+  assert.equal(secureStreamUrl("http://192.0.2.1:8080/live.m3u8"), null);
+  assert.equal(secureStreamUrl("http://user:pass@tv.example/live.m3u8"), null);
+});
 
 test("accepts HTTPS HLS URLs and detects manifests", () => {
   assert.deepEqual(inspectStreamUrl("https://tv.example/live.M3U8?token=abc", "https:"), {

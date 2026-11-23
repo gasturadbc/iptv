@@ -26,3 +26,4 @@
 .player-error svg{color:#f28a8e}
 .player-note{margin:12px 0 0;color:#737b89;font-size:10px;line-height:1.5}
 @media(max-width:650px){.player-overlay{padding:12px}.player-dialog{max-height:calc(100vh - 24px);padding:13px}.player-header{margin-bottom:12px}.player-header h2{font-size:15px}.player-stage{aspect-ratio:16/10}.player-note{font-size:9px}}
+.player-recovery{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:12px}.player-recovery span{color:#aeb6c2;font-size:12px}.player-stage{max-height:70dvh}.player-header>div{min-width:0;overflow-wrap:anywhere}
